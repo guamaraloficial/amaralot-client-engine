@@ -17,6 +17,9 @@ jobs:
   build:
     runs-on: windows-2025-vs2026
     timeout-minutes: 90
+    env:
+      VCPKG_MAX_CONCURRENCY: '2'
+      VCPKG_KEEP_ENV_VARS: 'HTTP_PROXY;HTTPS_PROXY;ALL_PROXY;NO_PROXY;SSL_CERT_FILE;SSL_CERT_DIR;CURL_CA_BUNDLE'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install pinned CMake
@@ -31,7 +34,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $baseline = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
           if ($baseline -notmatch '^[a-f0-9]{40}$') { throw 'Invalid baseline' }
-          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git vcpkg
+          git clone --no-checkout https://github.com/microsoft/vcpkg.git vcpkg
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg clone failed' }
           git -C vcpkg checkout 664933b8d385dfc01f4e0cdff4c7c74e71f6a740
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg checkout failed' }
@@ -61,6 +64,12 @@ jobs:
               New-Item -ItemType Directory -Force -Path $dest | Out-Null
               Copy-Item -LiteralPath $notice -Destination $dest
             }
+          }
+          Copy-Item -LiteralPath vcpkg_installed/vcpkg/status -Destination artifacts/dependency-versions.txt
+          Get-ChildItem vcpkg_installed/x64-windows/share -Recurse -Filter vcpkg.spdx.json | ForEach-Object {
+            $dest = Join-Path artifacts/third-party-licenses $_.Directory.Name
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Copy-Item -LiteralPath $_.FullName -Destination $dest
           }
           $signature = Get-AuthenticodeSignature artifacts/AmaralOT.exe
           @{ sourceCommit=$env:GITHUB_SHA; sha256=(Get-FileHash artifacts/AmaralOT.exe -Algorithm SHA256).Hash; signingStatus=$signature.Status.ToString(); releaseCandidateOnly=$true } | ConvertTo-Json | Set-Content artifacts/build-provenance.json
