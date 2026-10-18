@@ -1,0 +1,61 @@
+name: Windows review build (unsigned)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install pinned CMake
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check cmake==4.2.3
+          if ($LASTEXITCODE -ne 0) { throw 'CMake install failed' }
+          python -c "import cmake; print(cmake.CMAKE_BIN_DIR)" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Checkout pinned dependency manager
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $baseline = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+          if ($baseline -notmatch '^[a-f0-9]{40}$') { throw 'Invalid baseline' }
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git vcpkg
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg clone failed' }
+          git -C vcpkg checkout 664933b8d385dfc01f4e0cdff4c7c74e71f6a740
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg checkout failed' }
+          & .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg bootstrap failed' }
+      - name: Configure and build from source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DCMAKE_TOOLCHAIN_FILE="$pwd/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DVCPKG_INSTALLED_DIR="$pwd/vcpkg_installed" -DOPTIONS_ENABLE_IPO=OFF -DSPEED_UP_BUILD_UNITY=OFF -DOTCLIENT_BUILD_TESTS=OFF -DTOGGLE_DIRECTX=OFF -DTOGGLE_BIN_FOLDER=ON -DBUILD_COMMIT=$env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+          cmake --build build --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
+      - name: Record source and binary checksums
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory artifacts | Out-Null
+          $candidates = @(Get-ChildItem build -Recurse -Filter otclient.exe | Where-Object { $_.FullName -notmatch '\\CMakeFiles\\' })
+          if ($candidates.Count -ne 1) { throw 'Expected one client executable' }
+          Copy-Item -LiteralPath $candidates[0].FullName -Destination artifacts/AmaralOT.exe
+          Copy-Item -Path vcpkg_installed/x64-windows/bin/*.dll -Destination artifacts
+          Get-ChildItem vcpkg_installed/x64-windows/share -Directory | ForEach-Object {
+            $notice = Join-Path $_.FullName copyright
+            if (Test-Path -LiteralPath $notice) {
+              $dest = Join-Path artifacts/third-party-licenses $_.Name
+              New-Item -ItemType Directory -Force -Path $dest | Out-Null
+              Copy-Item -LiteralPath $notice -Destination $dest
+            }
+          }
+          $signature = Get-AuthenticodeSignature artifacts/AmaralOT.exe
+          @{ sourceCommit=$env:GITHUB_SHA; sha256=(Get-FileHash artifacts/AmaralOT.exe -Algorithm SHA256).Hash; signingStatus=$signature.Status.ToString(); releaseCandidateOnly=$true } | ConvertTo-Json | Set-Content artifacts/build-provenance.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: amaralot-engine-unsigned-review
+          path: artifacts/
+          retention-days: 7
