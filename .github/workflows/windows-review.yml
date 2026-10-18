@@ -1,6 +1,16 @@
 name: Windows review build (unsigned)
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'cmake/**'
+      - 'vc18/**'
+      - 'CMakeLists.txt'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
+      - '.github/workflows/windows-review.yml'
 permissions:
   contents: read
 jobs:

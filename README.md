@@ -1,6 +1,6 @@
 # AmaralOT client engine - review candidate
 
-This is a local preparation candidate, not an approved or signed public release.
+This is a public source review candidate, not an approved or signed player release.
 It contains the C++ engine recovered from the supplied OTClient Redemption source
 archive. The archive's executable is different from the executable currently
 distributed by AmaralOT. Compatibility must be established before replacement.
@@ -13,7 +13,7 @@ The private source archive, precompiled dependencies and compiler are excluded.
 ## Build
 
 Windows x64 with MSVC 2026, CMake and the dependency versions pinned in vcpkg.json.
-The workflow in .github/workflows/windows-review.yml is manual and has no signing
+The workflow in .github/workflows/windows-review.yml can run manually or on engine changes pushed to main. It has no signing
 or publishing steps. It must be run successfully in the intended repository
 before any request for sponsored signing is made.
 
